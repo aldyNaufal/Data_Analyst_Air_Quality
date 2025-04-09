@@ -4,21 +4,42 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.colors as mcolors
+import gdown
+import os
+
 # -------------------------------
 # Fungsi untuk memuat dataset dengan caching
 # -------------------------------
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("Main_Data.csv")
-        # Membuat kolom datetime dari kolom year, month, day, dan hour
-        df['datetime'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])
+        # File ID dari Google Drive
+        file_id = "1lvv-bExNSttuCSAtsvqmSItBaCECkAS-"
+        url = f"https://drive.google.com/uc?id={file_id}"
+        output = "Main_Data.csv"
+
+        # Unduh file jika belum ada
+        if not os.path.exists(output):
+            gdown.download(url, output, quiet=False)
+
+        # Baca data
+        df = pd.read_csv(output)
+
+        # Buat kolom datetime dari year, month, day, hour (jika kolom tersedia)
+        if all(col in df.columns for col in ['year', 'month', 'day', 'hour']):
+            df['datetime'] = pd.to_datetime(df[['year', 'month', 'day', 'hour']])
+        else:
+            st.warning("Kolom tahun/bulan/hari/jam tidak lengkap untuk membuat datetime.")
+
         return df
+
     except Exception as e:
         st.error("Error loading data: " + str(e))
         return pd.DataFrame()
 
+# Load data
 data = load_data()
+
 
 # Sekarang kita bisa membuat kolom tambahan dengan menggunakan kolom datetime yang baru dibuat
 data['day_of_week'] = data['datetime'].dt.day_name()
@@ -199,24 +220,31 @@ elif st.session_state.page == "Visualization":
     # Tab 3: Analisis Berdasarkan Lokasi/Stasiun
     # ====================
     with tab3:
-       st.subheader("Analisis Berdasarkan Lokasi/Stasiun")
-       # Filter: Pilih stasiun (bisa lebih dari satu) dan polutan
-       selected_stations = st.multiselect("Pilih Stasiun", options=stations, default=list(stations))
-       selected_pollutant = st.selectbox("Pilih Polutan", pollutants, key="pollutant_tab3")
-      
-       df_station = data[data['station'].isin(selected_stations)]
-       # Menghitung rata-rata polutan per stasiun
-       df_grouped = df_station.groupby('station')[selected_pollutant].mean().reset_index()
-      
-       # Buat palet warna: skala 'Blues' dimana nilai tertinggi = biru gelap dan terendah = biru muda
-       norm = mcolors.Normalize(vmin=df_grouped[selected_pollutant].min(), vmax=df_grouped[selected_pollutant].max())
-       colors = [plt.cm.Blues(norm(val)) for val in df_grouped[selected_pollutant]]
-      
-      # Visualisasi bar chart dengan warna sesuai nilai
-       fig, ax = plt.subplots()
-       sns.barplot(data=df_grouped, x='station', y=selected_pollutant, ax=ax, palette=colors)
-       ax.set_title(f"Rata-rata {selected_pollutant} per Stasiun")
-       st.pyplot(fig)
+        st.subheader("Analisis Berdasarkan Lokasi/Stasiun")
+        
+        # Filter: Pilih stasiun dan polutan
+        selected_stations = st.multiselect("Pilih Stasiun", options=stations, default=list(stations))
+        selected_pollutant = st.selectbox("Pilih Polutan", pollutants, key="pollutant_tab3")
+
+        df_station = data[data['station'].isin(selected_stations)]
+        df_grouped = df_station.groupby('station')[selected_pollutant].mean().reset_index()
+
+        # Palet warna: Biru gelap ke terang berdasarkan nilai
+        norm = mcolors.Normalize(vmin=df_grouped[selected_pollutant].min(), vmax=df_grouped[selected_pollutant].max())
+        colors = [plt.cm.Blues(norm(val)) for val in df_grouped[selected_pollutant]]
+
+        # Visualisasi
+        fig, ax = plt.subplots()
+        sns.barplot(data=df_grouped, x='station', y=selected_pollutant, ax=ax, palette=colors)
+
+        # Rotate label sumbu-x agar tidak tabrakan
+        ax.set_xticklabels(df_grouped['station'], rotation=45, ha='right')
+        ax.set_title(f"Rata-rata {selected_pollutant} per Stasiun")
+        ax.set_ylabel(selected_pollutant)
+        ax.set_xlabel("Stasiun")
+
+        st.pyplot(fig)
+
 
     # ====================
     # Tab 4: Heatmap dan Visualisasi Kalender (Agregasi per 10 jam)
